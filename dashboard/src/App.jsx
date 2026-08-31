@@ -71,7 +71,7 @@ export default function App() {
             <TerminalIcon sx={{ fontSize: 24 }} />
           </Box>
           <Typography className="header-title">
-            AI ACTIVITY TRACKER COCKPIT
+            EyeKeeper.AI
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
