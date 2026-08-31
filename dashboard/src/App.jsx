@@ -13,6 +13,9 @@ import {
   TableRow,
   Chip,
   IconButton,
+  Tabs,
+  Tab,
+  CircularProgress,
   Tooltip as MuiTooltip
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -20,6 +23,9 @@ import MemoryIcon from '@mui/icons-material/Memory';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import SendIcon from '@mui/icons-material/Send';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import ListAltIcon from '@mui/icons-material/ListAlt';
 import {
   PieChart,
   Pie,
@@ -41,6 +47,14 @@ const ACCENT_COLORS = ['#00E5FF', '#7C4DFF', '#FF4081', '#00E676', '#FFD600', '#
 export default function App() {
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState([]);
+  const [activeTab, setActiveTab] = useState(0); // 0: Feed, 1: AI Chat Assistant
+
+  // RAG Chat States
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [messages, setMessages] = useState([
+    { sender: 'ai', text: 'Hello! I am EyeKeeper.AI. Ask me anything about your tracked activity, productivity patterns, or window usage history!' }
+  ]);
 
   const fetchData = async () => {
     try {
@@ -59,12 +73,33 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // RAG Query Handler
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    const userQuery = chatInput;
+    setMessages((prev) => [...prev, { sender: 'user', text: userQuery }]);
+    setChatInput('');
+    setChatLoading(true);
+
+    try {
+      // Connects to your Express / Python RAG route
+      const response = await axios.post('http://localhost:5000/api/ask', { question: userQuery });
+      setMessages((prev) => [...prev, { sender: 'ai', text: response.data.answer || response.data.response || 'No specific activity records found for this query.' }]);
+    } catch (err) {
+      console.error('RAG Query Error:', err);
+      setMessages((prev) => [...prev, { sender: 'ai', text: 'Error connecting to RAG backend service. Please check your backend server.' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const totalTimeSeconds = stats.reduce((acc, curr) => acc + (curr.total_duration || 0), 0);
   const primaryCategory = stats.length > 0 ? [...stats].sort((a, b) => b.total_duration - a.total_duration)[0]?.category : 'N/A';
 
   return (
     <Box className="dashboard-container">
-      {/* 1. Header Bar */}
+      {/* Top Header Bar */}
       <Paper component={motion.div} initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="glass-panel dashboard-header">
         <Box className="header-title-box">
           <Box className="header-icon-badge">
@@ -87,7 +122,7 @@ export default function App() {
         </Box>
       </Paper>
 
-      {/* 2. Top KPI Metrics Row */}
+      {/* KPI Cards Row */}
       <Box className="kpi-row">
         <Paper component={motion.div} whileHover={{ y: -3 }} className="glass-panel kpi-card kpi-card-cyan">
           <Box>
@@ -122,11 +157,10 @@ export default function App() {
         </Paper>
       </Box>
 
-      {/* 3. Main Dashboard Body Grid */}
+      {/* Main Grid */}
       <Box className="dashboard-grid">
-        {/* Left Side Pane: Visual Analytics */}
+        {/* Left Side: Charts */}
         <Box className="charts-pane">
-          {/* Pie Chart Panel */}
           <Paper className="glass-panel chart-panel">
             <Box className="panel-header">
               <Typography className="panel-title">Category Share</Typography>
@@ -159,7 +193,6 @@ export default function App() {
             </Box>
           </Paper>
 
-          {/* Bar Chart Panel */}
           <Paper className="glass-panel chart-panel">
             <Box className="panel-header">
               <Typography className="panel-title">Time Spent per Category (Seconds)</Typography>
@@ -181,58 +214,99 @@ export default function App() {
           </Paper>
         </Box>
 
-        {/* Right Side Pane: Activity Log Table */}
+        {/* Right Side: Tabbed Panel (Real-Time Feed OR RAG Chat Assistant) */}
         <Paper className="glass-panel feed-pane">
-          <Box className="panel-header" sx={{ p: '16px 20px 12px 20px', mb: 0 }}>
-            <Typography className="panel-title" sx={{ color: '#00E5FF !important' }}>
-              ⚡ Real-Time Activity Log
-            </Typography>
-            <Chip label={`${logs.length} entries`} size="small" sx={{ background: 'rgba(255,255,255,0.05)', color: '#94A3B8' }} />
+          <Box sx={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', background: '#0D131F' }}>
+            <Tabs
+              value={activeTab}
+              onChange={(e, newVal) => setActiveTab(newVal)}
+              textColor="inherit"
+              TabIndicatorProps={{ style: { backgroundColor: '#00E5FF' } }}
+            >
+              <Tab icon={<ListAltIcon sx={{ fontSize: 18 }} />} label="Real-Time Feed" sx={{ color: '#8F9BBA', fontSize: '0.75rem', fontWeight: 700, minHeight: 48 }} />
+              <Tab icon={<SmartToyIcon sx={{ fontSize: 18 }} />} label="Ask EyeKeeper AI (RAG)" sx={{ color: '#8F9BBA', fontSize: '0.75rem', fontWeight: 700, minHeight: 48 }} />
+            </Tabs>
           </Box>
 
-          <TableContainer className="table-scroll-wrapper">
-            <Table stickyHeader size="small">
-              <TableHead className="custom-table-head">
-                <TableRow>
-                  {['Timestamp', 'Category', 'App Name', 'Summary', 'Duration'].map((col, idx) => (
-                    <TableCell key={idx} className="custom-head-cell">
-                      {col}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {logs.length === 0 ? (
+          {/* TAB 0: Real-time Feed Table */}
+          {activeTab === 0 && (
+            <TableContainer className="table-scroll-wrapper">
+              <Table stickyHeader size="small">
+                <TableHead className="custom-table-head">
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ color: '#64748B', py: 6 }}>
-                      No activity events registered today.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  logs.map((row) => (
-                    <TableRow key={row.id} className="custom-row">
-                      <TableCell className="custom-cell">{row.readable_time || row.timestamp}</TableCell>
-                      <TableCell className="custom-cell">
-                        <Chip
-                          label={row.category}
-                          size="small"
-                          className="chip-tag"
-                          sx={{
-                            backgroundColor: row.category === 'Coding' ? 'rgba(0, 229, 255, 0.15)' : 'rgba(124, 77, 255, 0.15)',
-                            color: row.category === 'Coding' ? '#00E5FF' : '#B388FF',
-                            border: `1px solid ${row.category === 'Coding' ? 'rgba(0,229,255,0.3)' : 'rgba(124,77,255,0.3)'}`
-                          }}
-                        />
+                    {['Timestamp', 'Category', 'App Name', 'Summary', 'Duration'].map((col, idx) => (
+                      <TableCell key={idx} className="custom-head-cell">
+                        {col}
                       </TableCell>
-                      <TableCell className="custom-cell app-badge">{row.app_name}</TableCell>
-                      <TableCell className="custom-cell" sx={{ color: '#94A3B8 !important' }}>{row.summary}</TableCell>
-                      <TableCell className="custom-cell" sx={{ fontWeight: 700 }}>{row.duration_seconds || 0}s</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {logs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ color: '#64748B', py: 6 }}>
+                        No activity events registered today.
+                      </TableCell>
                     </TableRow>
-                  ))
+                  ) : (
+                    logs.map((row) => (
+                      <TableRow key={row.id} className="custom-row">
+                        <TableCell className="custom-cell">{row.readable_time || row.timestamp}</TableCell>
+                        <TableCell className="custom-cell">
+                          <Chip
+                            label={row.category}
+                            size="small"
+                            className="chip-tag"
+                            sx={{
+                              backgroundColor: row.category === 'Coding' ? 'rgba(0, 229, 255, 0.15)' : 'rgba(124, 77, 255, 0.15)',
+                              color: row.category === 'Coding' ? '#00E5FF' : '#B388FF',
+                              border: `1px solid ${row.category === 'Coding' ? 'rgba(0,229,255,0.3)' : 'rgba(124,77,255,0.3)'}`
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="custom-cell app-badge">{row.app_name}</TableCell>
+                        <TableCell className="custom-cell" sx={{ color: '#94A3B8 !important' }}>{row.summary}</TableCell>
+                        <TableCell className="custom-cell" sx={{ fontWeight: 700 }}>{row.duration_seconds || 0}s</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          {/* TAB 1: RAG Chat Assistant */}
+          {activeTab === 1 && (
+            <Box className="chat-container">
+              <Box className="chat-messages-box">
+                {messages.map((msg, index) => (
+                  <Box key={index} className={`chat-bubble ${msg.sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}`}>
+                    {msg.text}
+                  </Box>
+                ))}
+                {chatLoading && (
+                  <Box className="chat-bubble chat-bubble-ai" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={14} sx={{ color: '#00E5FF' }} />
+                    <Typography variant="caption">Searching activity knowledge base...</Typography>
+                  </Box>
                 )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+              </Box>
+
+              <Box className="chat-input-box">
+                <input
+                  type="text"
+                  className="chat-input-field"
+                  placeholder="Ask e.g. 'How much time did I spend on VS Code today?'"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                />
+                <IconButton className="chat-send-btn" size="small" onClick={handleSendMessage} disabled={chatLoading}>
+                  <SendIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Box>
+            </Box>
+          )}
         </Paper>
       </Box>
     </Box>
